@@ -1,0 +1,205 @@
+{
+  "settings": {
+    "analysis": {
+      "char_filter": {
+        "html_strip": {
+          "type": "html_strip"
+        }
+      },
+      "filter": {
+        "english_stop": {
+          "type": "stop",
+          "stopwords": "english"
+        },
+        "english_stemmer": {
+          "type": "stemmer",
+          "language": "english"
+        },
+        "min_length_filter": {
+          "type": "length",
+          "min": 3
+        }
+      },
+      "tokenizer": {
+        "autocomplete_tokenizer": {
+          "type": "edge_ngram",
+          "min_gram": 3,
+          "max_gram": 20,
+          "token_chars": ["letter", "digit" ]
+        }
+      },
+      "analyzer": {
+        "content_analyzer": {
+          "type": "custom",
+          "char_filter": ["html_strip"],
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "english_stop",
+            "english_stemmer",
+            "min_length_filter"     
+          ]
+        },
+        "autocomplete_analyzer": {
+          "type": "custom",
+          "tokenizer": "autocomplete_tokenizer",
+          "filter": ["lowercase"]
+        },
+        "title_search_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "english_stop"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "id": {
+        "type": "keyword",
+        "ignore_above": 256
+      },
+
+      "doc_id": {
+        "type": "keyword",
+        "ignore_above": 256
+      },
+
+    
+
+      "title": {
+        "type": "text",
+        "analyzer": "autocomplete_analyzer",
+        "search_analyzer": "title_search_analyzer",
+        "fields": {
+          "raw": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+
+      "content": {
+        "type": "text",
+        "analyzer": "content_analyzer",
+        "fields": {
+          "raw": {
+            "type": "keyword",
+            "ignore_above": 512
+          }
+        }
+      },
+
+      "authors": {
+        "type": "nested",
+        "properties": {
+          "first": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "last": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "email": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+
+      "date": {
+        "type": "date"
+      },
+
+      "geopoint": {
+        "type": "geo_point"
+      },
+
+      "temporalExpressions": {
+        "type": "nested",
+        "properties": {
+          "text": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "normalized": {
+            "type": "date"
+          },
+          "source": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "has_year": {
+            "type": "boolean"
+          },
+          "is_relative": {
+            "type": "boolean"
+          },
+          "confidence": {
+            "type": "float"
+          }
+        }
+      },
+
+      "georeferences": {
+        "type": "nested",
+        "properties": {
+          "name": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "confidence": {
+            "type": "float"
+          },
+          "key": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "country_code": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+
+      "topics": {
+        "type": "keyword",
+        "ignore_above": 256
+      },
+
+      "places": {
+        "type": "keyword",
+        "ignore_above": 256
+      },
+
+      "countryKeys": {
+        "type": "keyword",
+        "ignore_above": 256
+      },
+
+      "content_embedding": {
+        "type": "dense_vector",
+        "dims": 384,
+        "index": true,
+        "similarity": "cosine"
+      },
+
+      "approximations": {
+        "properties": {
+          "date_is_approx": {
+            "type": "boolean"
+          },
+          "geopoint_is_approx": {
+            "type": "boolean"
+          },
+          "geopoint_from": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      }
+    }
+  }
+}
