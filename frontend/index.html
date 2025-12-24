@@ -1,116 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <title>Our Retrieval System</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <link rel="stylesheet" href="style.css" />
-    </head>
-    <body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Document Retrieval System</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📚 Smart Document Retrieval System</h1>
+            <p>Search documents with text, location, time, and georeference filters</p>
+        </header>
 
-        <!-- SPLASH -->
-        <div id="splash">
-            <h1>Welcome to Our Retrieval System</h1>
-            <p>✨ hey! what do you wanna look for today?</p>
-        </div>
+        <!-- Search Section -->
+        <div class="search-section">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search documents... (e.g., 'economy in Palestine')"
+                    autocomplete="off"
+                >
+                <button id="searchBtn" class="btn btn-primary">Search</button>
+            </div>
 
-        <!-- APP -->
-        <div id="app" class="hidden">
+            <!-- Autocomplete Dropdown -->
+            <div id="autocompleteList" class="autocomplete-list"></div>
 
-            <!-- HEADER -->
-            <header class="header">
-                <div class="logo">Smart Retrieval</div>
-                <nav class="tabs">
-                    <button onclick="openAnalytics('countries')">Top Geo
-                        Countries</button>
-                    <button onclick="openAnalytics('cities')">Top Geo
-                        Cities</button>
-                    <button onclick="openAnalytics('time')">Docs Over
-                        Time</button>
-                </nav>
-            </header>
-
-            <!-- SEARCH -->
-            <section class="hero-search">
-                <h2 class="hero-title">
-                    hey 👋 <span>what do you want to explore today?</span>
-                </h2>
-
-                <div class="search-card">
-                    <span class="sub">All fields are optional — search using any
-                        of them.</span>
-
-                    <div class="field autocomplete-wrapper">
-                        <label for="query">Search Topic</label>
-                        <input id="query" type="text"
-                            placeholder="economy, politics, climate…"
-                            autocomplete="off" />
-                        <div id="autocomplete-box"
-                            class="autocomplete hidden"></div>
+            <!-- Advanced Filters -->
+            <div class="filters">
+                <button id="toggleFilters" class="btn btn-secondary">⚙️ Advanced Filters</button>
+                
+                <div id="advancedFilters" class="advanced-filters" style="display: none;">
+                    <!-- Search Type -->
+                    <div class="filter-group">
+                        <label>Search Type:</label>
+                        <select id="searchType">
+                            <option value="text">Text Search</option>
+                            <option value="spatiotemporal">Spatiotemporal Search</option>
+                        </select>
                     </div>
 
-                    <div class="field">
-                        <label for="date">Specific Date</label>
-                        <input id="date" type="date" />
+                    <!-- Georeference Filter -->
+                    <div class="filter-group">
+                        <label>📍 Georeference (Place Name):</label>
+                        <input 
+                            type="text" 
+                            id="georefInput" 
+                            placeholder="e.g., Palestine, Nablus, Jerusalem"
+                        >
                     </div>
 
-                    <div class="field-row">
-                        <div class="field">
-                            <label for="date-from">From</label>
-                            <input id="date-from" type="date" />
-                        </div>
-                        <div class="field">
-                            <label for="date-to">To</label>
-                            <input id="date-to" type="date" />
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label for="georef">Location (Place Name)</label>
-                        <input id="georef" type="text"
-                            placeholder="Paris, London, Germany…" />
-                    </div>
-
-                    <div class="field-row">
-                        <div class="field">
-                            <label for="lat">Latitude</label>
-                            <input id="lat" type="text"
-                                placeholder="optional" />
-                        </div>
-                        <div class="field">
-                            <label for="lon">Longitude</label>
-                            <input id="lon" type="text"
-                                placeholder="optional" />
+                    <!-- Location Filters -->
+                    <div class="filter-group">
+                        <label>🌍 Location (Latitude, Longitude):</label>
+                        <div class="location-inputs">
+                            <input type="number" id="latInput" placeholder="Latitude" step="0.0001">
+                            <input type="number" id="lonInput" placeholder="Longitude" step="0.0001">
+                            <button id="useMyLocation" class="btn btn-small">Use My Location</button>
                         </div>
                     </div>
-                    <div class="field">
-                        <label for="radius">Radius (km)</label>
-                        <input id="radius" type="number"
-                            placeholder="e.g. 100" />
-                    </div>
 
-                    <button type="button" onclick="search()">Search</button>
+                    <!-- Temporal Filters (for spatiotemporal search) -->
+                    <div id="temporalFilters" class="filter-group" style="display: none;">
+                        <label>📅 Time Range:</label>
+                        <div class="date-inputs">
+                            <input type="date" id="startDate" placeholder="Start Date">
+                            <input type="date" id="endDate" placeholder="End Date">
+                        </div>
+                        <label>📏 Distance:</label>
+                        <input type="text" id="distanceInput" placeholder="e.g., 500km" value="500km">
+                    </div>
                 </div>
-            </section>
-
-            <!-- RESULTS -->
-            <section class="results-area">
-                <h3>Retrieved Documents</h3>
-                <div id="results" class="results"></div>
-            </section>
-
-        </div>
-
-        <!-- ANALYTICS MODAL -->
-        <div id="analytics-modal" class="modal hidden">
-            <div class="modal-content">
-                <button class="close" type="button"
-                    onclick="closeModal()">×</button>
-                <h3 id="modal-title"></h3>
-                <pre
-                    id="modal-body">[ analytics data will be printed here ]</pre>
             </div>
         </div>
 
-        <script src="script.js"></script>
-    </body>
+        <!-- Map Section -->
+        <div class="map-section">
+            <h2>🗺️ Document Locations</h2>
+            <div id="map"></div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <div class="results-header">
+                <h2>Search Results</h2>
+                <span id="resultCount" class="result-count"></span>
+            </div>
+            <div id="results" class="results-container">
+                <div class="empty-state">
+                    <p>🔍 Start searching to see results</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+            <div class="spinner"></div>
+            <p>Searching...</p>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
 </html>

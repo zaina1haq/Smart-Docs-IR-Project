@@ -1,166 +1,331 @@
-const results = document.getElementById("results");
-const modal = document.getElementById("analytics-modal");
-const modalTitle = document.getElementById("modal-title");
-const modalBody = document.getElementById("modal-body");
+// API Configuration
+const API_BASE_URL = 'http://localhost:8000';
 
-const queryInput = document.getElementById("query");
-const autocompleteBox = document.getElementById("autocomplete-box");
+// Map initialization
+let map;
+let markers = [];
 
-let autocompleteTimer = null;
+// Initialize the application
+document.addEventListener('DOMContentLoaded', () => {
+    initializeMap();
+    setupEventListeners();
+});
 
-/* =========================
-   SPLASH
-   ========================= */
-window.onload = () => {
-  setTimeout(() => {
-    document.getElementById("splash").classList.add("hidden");
-    document.getElementById("app").classList.remove("hidden");
-  }, 2200);
-};
+// Initialize Leaflet map
+function initializeMap() {
+    map = L.map('map').setView([32.2211, 35.2544], 8);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(map);
+}
 
-/* =========================
-   AUTOCOMPLETE (AFTER 3 CHARS)
-   ========================= */
-queryInput.addEventListener("input", () => {
-  const q = queryInput.value.trim();
+// Setup all event listeners
+function setupEventListeners() {
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const toggleFilters = document.getElementById('toggleFilters');
+    const advancedFilters = document.getElementById('advancedFilters');
+    const searchType = document.getElementById('searchType');
+    const temporalFilters = document.getElementById('temporalFilters');
+    const useMyLocation = document.getElementById('useMyLocation');
 
-  clearTimeout(autocompleteTimer);
+    searchBtn.addEventListener('click', performSearch);
+    searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') performSearch();
+    });
 
-  if (q.length < 3) {
-    autocompleteBox.classList.add("hidden");
-    autocompleteBox.innerHTML = "";
-    return;
-  }
+    searchInput.addEventListener('input', debounce(handleAutocomplete, 300));
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-box')) {
+            hideAutocomplete();
+        }
+    });
 
-  autocompleteTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(
-        `http://localhost:5000/api/autocomplete?q=${encodeURIComponent(q)}&size=10`
-      );
-      const data = await res.json();
+    toggleFilters.addEventListener('click', () => {
+        const isHidden = advancedFilters.style.display === 'none';
+        advancedFilters.style.display = isHidden ? 'block' : 'none';
+        toggleFilters.textContent = isHidden ? '⚙️ Hide Filters' : '⚙️ Advanced Filters';
+    });
 
-      if (!data.suggestions || data.suggestions.length === 0) {
-        autocompleteBox.classList.add("hidden");
-        return;
-      }
+    searchType.addEventListener('change', (e) => {
+        temporalFilters.style.display = e.target.value === 'spatiotemporal' ? 'block' : 'none';
+    });
 
-      autocompleteBox.innerHTML = "";
-      data.suggestions.forEach(item => {
-        const div = document.createElement("div");
-        div.innerHTML = item.highlight?.[0] || item.title;
-        div.onclick = () => {
-          queryInput.value = item.title;
-          autocompleteBox.classList.add("hidden");
-          search(); // auto-search on select
+    useMyLocation.addEventListener('click', getUserLocation);
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
         };
-        autocompleteBox.appendChild(div);
-      });
-
-      autocompleteBox.classList.remove("hidden");
-    } catch (e) {
-      autocompleteBox.classList.add("hidden");
-    }
-  }, 250); // debounce
-});
-
-/* Hide autocomplete when clicking outside */
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".autocomplete-wrapper")) {
-    autocompleteBox.classList.add("hidden");
-  }
-});
-
-/* =========================
-   SEARCH — 100% MATCH BACKEND
-   ========================= */
-async function search() {
-  results.innerHTML = "";
-
-  const query = queryInput.value.trim();
-  const temporalExpression = document.getElementById("date").value;
-  const dateFrom = document.getElementById("date-from").value;
-  const dateTo = document.getElementById("date-to").value;
-  const georef = document.getElementById("georef").value.trim();
-  const lat = document.getElementById("lat").value.trim();
-  const lon = document.getElementById("lon").value.trim();
-  const radius = document.getElementById("radius")?.value;
-
-  if (!query && !temporalExpression && !georef && !lat && !lon) {
-    results.innerHTML = "<p>Please enter at least one search field.</p>";
-    return;
-  }
-
-  const body = {
-    query: query || "*",
-    temporal_expression: temporalExpression || null,
-    georeference: georef || null,
-    size: 10,
-    use_semantic: true
-  };
-
-  if (dateFrom) body.date_from = dateFrom;
-  if (dateTo) body.date_to = dateTo;
-  if (lat) body.lat = parseFloat(lat);
-  if (lon) body.lon = parseFloat(lon);
-  if (radius) body.radius_km = parseFloat(radius);
-
-  try {
-    const response = await fetch("http://localhost:5000/api/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-
-    const data = await response.json();
-
-    if (!data.results || data.results.length === 0) {
-      results.innerHTML = "<p>No documents found.</p>";
-      return;
-    }
-
-    data.results.forEach(doc => {
-      results.innerHTML += `
-        <div class="result">
-          <h4>${doc.title || "Untitled Document"}</h4>
-          <p>${doc.content_snippet || ""}</p>
-          <small>
-            📅 ${doc.date || "Unknown date"}<br/>
-            🌍 ${(doc.places || []).join(", ") || "N/A"}
-          </small>
-        </div>
-      `;
-    });
-
-  } catch (err) {
-    console.error(err);
-    results.innerHTML = "<p>Search failed. Backend not responding.</p>";
-  }
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
-/* =========================
-   ANALYTICS
-   ========================= */
-async function openAnalytics(type) {
-  modal.classList.remove("hidden");
+async function handleAutocomplete(e) {
+    const query = e.target.value.trim();
+    
+    if (query.length < 3) {
+        hideAutocomplete();
+        return;
+    }
 
-  let endpoint = "";
-  if (type === "countries") endpoint = "/api/analytics/top-georeferences";
-  if (type === "time") endpoint = "/api/analytics/temporal-distribution";
-
-  modalTitle.innerText =
-    type === "countries" ? "Top Geo References" :
-    type === "time" ? "Documents Over Time" :
-    "Analytics";
-
-  try {
-    const res = await fetch(`http://localhost:5000${endpoint}`);
-    const data = await res.json();
-    modalBody.innerText = JSON.stringify(data, null, 2);
-  } catch {
-    modalBody.innerText = "Failed to load analytics.";
-  }
+    try {
+        const response = await fetch(`${API_BASE_URL}/autocomplete?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        
+        if (data.hits && data.hits.hits.length > 0) {
+            showAutocomplete(data.hits.hits);
+        } else {
+            hideAutocomplete();
+        }
+    } catch (error) {
+        console.error('Autocomplete error:', error);
+        hideAutocomplete();
+    }
 }
 
-function closeModal() {
-  modal.classList.add("hidden");
+function showAutocomplete(hits) {
+    const autocompleteList = document.getElementById('autocompleteList');
+    autocompleteList.innerHTML = '';
+    
+    hits.forEach(hit => {
+        const item = document.createElement('div');
+        item.className = 'autocomplete-item';
+        item.textContent = hit._source.title;
+        item.addEventListener('click', () => {
+            document.getElementById('searchInput').value = hit._source.title;
+            hideAutocomplete();
+            performSearch();
+        });
+        autocompleteList.appendChild(item);
+    });
+    
+    autocompleteList.classList.add('show');
+}
+
+function hideAutocomplete() {
+    const autocompleteList = document.getElementById('autocompleteList');
+    autocompleteList.classList.remove('show');
+}
+
+function getUserLocation() {
+    if (navigator.geolocation) {
+        showLoading();
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                document.getElementById('latInput').value = position.coords.latitude.toFixed(4);
+                document.getElementById('lonInput').value = position.coords.longitude.toFixed(4);
+                map.setView([position.coords.latitude, position.coords.longitude], 10);
+                hideLoading();
+                alert('Location set successfully!');
+            },
+            (error) => {
+                hideLoading();
+                alert('Unable to get your location. Please enter manually.');
+                console.error('Geolocation error:', error);
+            }
+        );
+    } else {
+        alert('Geolocation is not supported by your browser.');
+    }
+}
+
+async function performSearch() {
+    const query = document.getElementById('searchInput').value.trim();
+    
+    if (!query) {
+        alert('Please enter a search query');
+        return;
+    }
+
+    const searchType = document.getElementById('searchType').value;
+    const lat = document.getElementById('latInput').value;
+    const lon = document.getElementById('lonInput').value;
+    const georef = document.getElementById('georefInput').value.trim();
+
+    showLoading();
+    hideAutocomplete();
+
+    try {
+        let url;
+        let params = new URLSearchParams({ q: query });
+
+        if (searchType === 'text') {
+            if (lat && lon) {
+                params.append('lat', lat);
+                params.append('lon', lon);
+            }
+            if (georef) {
+                params.append('georef', georef);
+            }
+            url = `${API_BASE_URL}/search?${params}`;
+        } else {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            if (!startDate || !endDate || !georef) {
+                alert('For spatiotemporal search, please provide:\n- Start Date (required)\n- End Date (required)\n- Georeference/Place Name (required)\n\nNote: Location (lat/lon) is optional');
+                hideLoading();
+                return;
+            }
+
+            const searchLat = lat || '32.2211';
+            const searchLon = lon || '35.2544';
+            const distance = document.getElementById('distanceInput').value || '500km';
+
+            params.append('start', startDate);
+            params.append('end', endDate);
+            params.append('lat', searchLat);
+            params.append('lon', searchLon);
+            params.append('distance', distance);
+            params.append('georef', georef);
+            
+            url = `${API_BASE_URL}/spatiotemporal?${params}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        displayResults(data);
+        updateMap(data);
+        hideLoading();
+    } catch (error) {
+        console.error('Search error:', error);
+        hideLoading();
+        alert('Search failed. Please make sure the backend is running.');
+    }
+}
+
+function displayResults(data) {
+    const resultsContainer = document.getElementById('results');
+    const resultCount = document.getElementById('resultCount');
+    
+    if (!data.hits || data.hits.hits.length === 0) {
+        resultsContainer.innerHTML = '<div class="empty-state"><p>No results found</p></div>';
+        resultCount.textContent = '';
+        return;
+    }
+
+    const hits = data.hits.hits;
+    resultCount.textContent = `${hits.length} results found`;
+
+    resultsContainer.innerHTML = hits.map((hit, index) => {
+        const source = hit._source;
+        const score = hit._score.toFixed(2);
+        
+        const date = source.date ? new Date(source.date).toLocaleDateString() : 'N/A';
+        
+        const authors = source.authors && source.authors.length > 0
+            ? source.authors.map(a => `${a.first} ${a.last}`).join(', ')
+            : 'Unknown';
+
+        const location = source.geopoint 
+            ? `${source.geopoint.lat.toFixed(4)}, ${source.geopoint.lon.toFixed(4)}`
+            : 'N/A';
+
+        const fullContent = source.content || 'No content available';
+        const truncatedContent = fullContent.length > 300 ? fullContent.substring(0, 300) + '...' : fullContent;
+        const needsReadMore = fullContent.length > 300;
+
+        const georeferences = source.georeferences && source.georeferences.length > 0
+            ? source.georeferences.map(g => 
+                `<span class="tag georeference">📍 ${g.name}</span>`
+              ).join('')
+            : '';
+
+        const temporalExpressions = source.temporalExpressions && source.temporalExpressions.length > 0
+            ? source.temporalExpressions.slice(0, 3).map(t => 
+                `<span class="tag temporal">📅 ${t.text}</span>`
+              ).join('')
+            : '';
+
+        return `
+            <div class="result-card">
+                <span class="result-score">Score: ${score}</span>
+                <h3>${source.title || 'Untitled Document'}</h3>
+                <div class="result-meta">
+                    <span>👤 ${authors}</span>
+                    <span>📅 ${date}</span>
+                    <span>📍 ${location}</span>
+                </div>
+                <div class="result-content" id="content-${index}">
+                    <span class="content-preview">${truncatedContent}</span>
+                    <span class="content-full" style="display: none;">${fullContent}</span>
+                </div>
+                ${needsReadMore ? `<button class="read-more-btn" onclick="toggleReadMore(${index})">Read More</button>` : ''}
+                <div class="result-tags">
+                    ${georeferences}
+                    ${temporalExpressions}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleReadMore(index) {
+    const contentDiv = document.getElementById(`content-${index}`);
+    const preview = contentDiv.querySelector('.content-preview');
+    const full = contentDiv.querySelector('.content-full');
+    const button = contentDiv.parentElement.querySelector('.read-more-btn');
+    
+    if (full.style.display === 'none') {
+        preview.style.display = 'none';
+        full.style.display = 'inline';
+        button.textContent = 'Read Less';
+    } else {
+        preview.style.display = 'inline';
+        full.style.display = 'none';
+        button.textContent = 'Read More';
+    }
+}
+
+function updateMap(data) {
+    markers.forEach(marker => map.removeLayer(marker));
+    markers = [];
+
+    if (!data.hits || data.hits.hits.length === 0) return;
+
+    const bounds = [];
+
+    data.hits.hits.forEach((hit, index) => {
+        const source = hit._source;
+        
+        if (source.geopoint && source.geopoint.lat && source.geopoint.lon) {
+            const lat = source.geopoint.lat;
+            const lon = source.geopoint.lon;
+            
+            const marker = L.marker([lat, lon]).addTo(map);
+            
+            const popupContent = `
+                <div class="popup-title">${source.title || 'Untitled'}</div>
+                <div class="popup-info">
+                    📅 ${source.date ? new Date(source.date).toLocaleDateString() : 'N/A'}<br>
+                    📊 Score: ${hit._score.toFixed(2)}
+                </div>
+            `;
+            
+            marker.bindPopup(popupContent);
+            markers.push(marker);
+            bounds.push([lat, lon]);
+        }
+    });
+
+    if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+    }
+}
+
+function showLoading() {
+    document.getElementById('loadingSpinner').style.display = 'block';
+}
+
+function hideLoading() {
+    document.getElementById('loadingSpinner').style.display = 'none';
 }
