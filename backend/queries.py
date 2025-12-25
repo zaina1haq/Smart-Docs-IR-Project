@@ -1,16 +1,18 @@
 from es_client import es, INDEX
 from typing import Optional, List
 
-
-# 1. AUTOCOMPLETE (titles)
+# This function is used for title autocomplete
+# It helps the user while typing a title
 def autocomplete_title(prefix: str):
     return es.search(
         index=INDEX,
-        size=10,
+        size=10,              # Return only 10 suggestions
         query={
             "bool": {
                 "should": [
                     {
+                        # This allows prefix matching
+                        #auto suggest
                         "match_bool_prefix": {
                             "title": {
                                 "query": prefix
@@ -18,6 +20,8 @@ def autocomplete_title(prefix: str):
                         }
                     },
                     {
+                        # This allows fuzzy matching
+
                         "match": {
                             "title": {
                                 "query": prefix,
@@ -26,14 +30,15 @@ def autocomplete_title(prefix: str):
                         }
                     }
                 ],
+                # At least one of the above should match
                 "minimum_should_match": 1
             }
         }
     )
 
 
-
-# 2. TEXT + SEMANTIC + RECENCY + OPTIONAL LOCATION
+#function handles normal text search
+# It combines text search + semantic search + time boost + location boost
 def text_search(
     query: str,
     embedding: Optional[List[float]] = None,
@@ -41,9 +46,11 @@ def text_search(
     lon: Optional[float] = None,
     georef: Optional[str] = None
 ):
+    #list stores scoring functions
     functions = []
 
-    # Recency boost
+    # boosts newer documents
+    # Recent documents get higher score
     functions.append({
         "gauss": {
             "date": {
@@ -54,23 +61,27 @@ def text_search(
         }
     })
 
-    # Localization boost
+    # boosts documents close to user location
+    # Only applied if latitude and longitude exist
     if lat is not None and lon is not None:
         functions.append({
             "gauss": {
                 "geopoint": {
                     "origin": {"lat": lat, "lon": lon},
-                    "scale": "300km",
+                    "scale": "300km",  # Nearby locations score higher
                     "decay": 0.6
                 }
             }
         })
 
-    # Stage 1: Lexical retrieval (BM25)
+    # main lexical (text) search
+    # Elasticsearch BM25 scoring
     lexical_query = {
         "bool": {
             "should": [
                 {
+                    # Search query in title and content
+                    # Title is more important (^6)
                     "multi_match": {
                         "query": query,
                         "fields": ["title^6", "content"],
@@ -78,6 +89,8 @@ def text_search(
                     }
                 },
                 {
+                    # Phrase match in title
+                    # Exact phrase gives higher score
                     "match_phrase": {
                         "title": {
                             "query": query,
@@ -86,7 +99,8 @@ def text_search(
                     }
                 },
                 {
-                    # Exact title match
+                    # Exact title match using keyword field
+                    # This gives very strong boost
                     "term": {
                         "title.raw": {
                             "value": query,
@@ -96,41 +110,44 @@ def text_search(
                     }
                 }
             ],
+            # At least one text condition must match
             "minimum_should_match": 1
         }
     }
 
-    # Georeference boost
+    # boosts documents that mention a specific place
+    # It searches inside nested georeferences
     if georef is not None:
         lexical_query["bool"]["should"].append({
-        "nested": {
-            "path": "georeferences",
-            "score_mode": "max",  #take strongest one
-            "query": {
-                "function_score": {
-                    "query": {
-                        "term": {
-                            "georeferences.name": {
-                                "value": georef.lower(),
-                                "case_insensitive": True
+            "nested": {
+                "path": "georeferences",   # Nested field
+                "score_mode": "max",       # Use strongest match
+                "query": {
+                    "function_score": {
+                        "query": {
+                            # Match place name
+                            "term": {
+                                "georeferences.name": {
+                                    "value": georef.lower(),
+                                    "case_insensitive": True
+                                }
                             }
-                        }
-                    },
-                    "script_score": {
-                        "script": {
-                            "source": """
-                                double conf = doc['georeferences.confidence'].value;
-                                return _score * conf * 5.0;
-                            """
+                        },
+                        # Multiply score by confidence value
+                        "script_score": {
+                            "script": {
+                                "source": """
+                                    double conf = doc['georeferences.confidence'].value;
+                                    return _score * conf * 5.0;
+                                """
+                            }
                         }
                     }
                 }
             }
-        }
-    })
+        })
 
-    # Stage 2: Semantic re-ranking
-
+    # If semantic embedding exists, apply semantic re-ranking
     if embedding is not None:
         final_query = {
             "script_score": {
@@ -139,30 +156,35 @@ def text_search(
                     "source": """
                         double base = _score;
 
-
+                        // If title exactly matches the query, boost strongly
                         if (doc['title.raw'].size() != 0 &&
                             doc['title.raw'].value.equalsIgnoreCase(params.q)
-) {
+                        ) {
                             base = base * 10.0;
                         }
 
-
+                        // Compute cosine similarity with document embedding
                         double sim = cosineSimilarity(params.qv, 'content_embedding');
+
+                        // Avoid negative similarity
                         sim = Math.max(sim, 0.0);
 
+                        // Combine lexical score and semantic similarity
                         return base * (1.0 + sim);
                     """,
                     "params": {
-                        "qv": embedding,
-                        "q": query
+                        "qv": embedding,  # Query vector
+                        "q": query        # Query text
                     }
                 }
             }
         }
     else:
+        # If no embedding, use lexical search only
         final_query = lexical_query
-    # Final scoring
 
+    # Final Elasticsearch search call
+    # Combines query score with time and location boosts
     return es.search(
         index=INDEX,
         size=10,
@@ -170,14 +192,15 @@ def text_search(
             "function_score": {
                 "query": final_query,
                 "functions": functions,
-                "boost_mode": "multiply",
-                "score_mode": "sum"
+                "boost_mode": "multiply",  # Multiply query score with boosts
+                "score_mode": "sum"        # Sum all boost functions
             }
         }
     )
 
-# 3. SPATIOTEMPORAL SEARCH
 
+# This function handles spatiotemporal search
+# It searches by text + date range + location
 def spatiotemporal_search(
     query: str,
     start: str,
@@ -188,10 +211,12 @@ def spatiotemporal_search(
     embedding: Optional[List[float]] = None,
     georef: Optional[str] = None
 ):
+    # Base query with text and date filtering
     base_query = {
         "bool": {
             "must": [
                 {
+                    # Text search
                     "multi_match": {
                         "query": query,
                         "fields": ["title^4", "content"],
@@ -199,6 +224,7 @@ def spatiotemporal_search(
                     }
                 },
                 {
+                    # Date range filter
                     "range": {
                         "date": {
                             "gte": start,
@@ -211,6 +237,7 @@ def spatiotemporal_search(
         }
     }
 
+    # Boost documents that mention a specific place
     if georef is not None:
         base_query["bool"]["should"].append({
             "nested": {
@@ -226,6 +253,7 @@ def spatiotemporal_search(
             }
         })
 
+    # Apply semantic similarity if embedding exists
     if embedding is not None:
         base_query = {
             "script_score": {
@@ -241,6 +269,7 @@ def spatiotemporal_search(
             }
         }
 
+    # Final spatiotemporal search with time and distance boosting
     return es.search(
         index=INDEX,
         size=10,
@@ -249,6 +278,7 @@ def spatiotemporal_search(
                 "query": base_query,
                 "functions": [
                     {
+                        # Boost recent documents
                         "gauss": {
                             "date": {
                                 "origin": "now",
@@ -259,6 +289,7 @@ def spatiotemporal_search(
                         "weight": 1
                     },
                     {
+                        # Boost documents close to given location
                         "gauss": {
                             "geopoint": {
                                 "origin": {"lat": lat, "lon": lon},

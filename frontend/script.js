@@ -1,19 +1,21 @@
-// Backend API base URL
+// API base URL for backend requests
 const API_BASE_URL = 'http://localhost:8000';
 
-// Leaflet map instance
+// Leaflet map object
 let map;
+
+// Store all map markers so we can remove them later
 let markers = [];
 
-// Start app after the HTML is ready
+// Wait until HTML page is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
-    initializeMap();
-    setupEventListeners();
+    initializeMap();          // Create the map
+    setupEventListeners();    // Attach UI events
 });
 
-// Create and show the Leaflet map
+// Create and setup the Leaflet map
 function initializeMap() {
-    // Default view (Palestine area)
+    // Set default map location (Palestine) and zoom level
     map = L.map('map').setView([32.2211, 35.2544], 8);
 
     // Load OpenStreetMap tiles
@@ -23,7 +25,7 @@ function initializeMap() {
     }).addTo(map);
 }
 
-// Link buttons/inputs to functions
+// Setup all UI event listeners
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -33,42 +35,41 @@ function setupEventListeners() {
     const temporalFilters = document.getElementById('temporalFilters');
     const useMyLocation = document.getElementById('useMyLocation');
 
-    // Search button click
+    // Click search button
     searchBtn.addEventListener('click', performSearch);
 
-    // Search when user presses Enter
+    // Press Enter to search
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performSearch();
     });
 
-    // Autocomplete while typing (with debounce to reduce API calls)
+    // Run autocomplete after typing (with delay)
     searchInput.addEventListener('input', debounce(handleAutocomplete, 300));
 
-    // Close autocomplete if user clicks outside search box
+    // Hide autocomplete when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.search-box')) {
             hideAutocomplete();
         }
     });
 
-    // Show/hide advanced filters area
+    // Show or hide advanced filters
     toggleFilters.addEventListener('click', () => {
         const isHidden = advancedFilters.style.display === 'none';
         advancedFilters.style.display = isHidden ? 'block' : 'none';
         toggleFilters.textContent = isHidden ? '⚙️ Hide Filters' : '⚙️ Advanced Filters';
     });
 
-    // Show date filters only for spatiotemporal search
+    // Show temporal filters only for spatiotemporal search
     searchType.addEventListener('change', (e) => {
-        temporalFilters.style.display =
-            e.target.value === 'spatiotemporal' ? 'block' : 'none';
+        temporalFilters.style.display = e.target.value === 'spatiotemporal' ? 'block' : 'none';
     });
 
-    // Get user current location
+    // Use browser location
     useMyLocation.addEventListener('click', getUserLocation);
 }
 
-// Delay function calls until user stops typing
+// Delay function execution (used for autocomplete)
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -81,23 +82,22 @@ function debounce(func, wait) {
     };
 }
 
-// Call backend autocomplete endpoint
+// Handle autocomplete API request
 async function handleAutocomplete(e) {
     const query = e.target.value.trim();
 
-    // Backend needs at least 3 chars for autocomplete
+    // Do not search if less than 3 characters
     if (query.length < 3) {
         hideAutocomplete();
         return;
     }
 
     try {
-        const response = await fetch(
-            `${API_BASE_URL}/autocomplete?q=${encodeURIComponent(query)}`
-        );
+        // Call backend autocomplete endpoint
+        const response = await fetch(`${API_BASE_URL}/autocomplete?q=${encodeURIComponent(query)}`);
         const data = await response.json();
 
-        // Show suggestions only if we have hits
+        // Show results if any exist
         if (data.hits && data.hits.hits.length > 0) {
             showAutocomplete(data.hits.hits);
         } else {
@@ -109,54 +109,45 @@ async function handleAutocomplete(e) {
     }
 }
 
-// Render autocomplete suggestions
+// Display autocomplete suggestions
 function showAutocomplete(hits) {
     const autocompleteList = document.getElementById('autocompleteList');
     autocompleteList.innerHTML = '';
 
+    // Create clickable suggestion for each hit
     hits.forEach(hit => {
         const item = document.createElement('div');
         item.className = 'autocomplete-item';
         item.textContent = hit._source.title;
-
-        // Click suggestion -> fill input then run search
         item.addEventListener('click', () => {
             document.getElementById('searchInput').value = hit._source.title;
             hideAutocomplete();
             performSearch();
         });
-
         autocompleteList.appendChild(item);
     });
 
     autocompleteList.classList.add('show');
 }
 
-// Hide autocomplete list
+// Hide autocomplete dropdown
 function hideAutocomplete() {
     const autocompleteList = document.getElementById('autocompleteList');
     autocompleteList.classList.remove('show');
 }
 
-// Get lat/lon from browser geolocation
+// Get user current location from browser
 function getUserLocation() {
     if (navigator.geolocation) {
         showLoading();
-
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                // Fill inputs with current location
-                document.getElementById('latInput').value =
-                    position.coords.latitude.toFixed(4);
-                document.getElementById('lonInput').value =
-                    position.coords.longitude.toFixed(4);
+                // Fill latitude and longitude inputs
+                document.getElementById('latInput').value = position.coords.latitude.toFixed(4);
+                document.getElementById('lonInput').value = position.coords.longitude.toFixed(4);
 
-                // Move the map to user location
-                map.setView(
-                    [position.coords.latitude, position.coords.longitude],
-                    10
-                );
-
+                // Move map to user location
+                map.setView([position.coords.latitude, position.coords.longitude], 10);
                 hideLoading();
                 alert('Location set successfully!');
             },
@@ -171,7 +162,7 @@ function getUserLocation() {
     }
 }
 
-// Build request URL and call backend search endpoint
+// Main search function
 async function performSearch() {
     const query = document.getElementById('searchInput').value.trim();
 
@@ -193,41 +184,34 @@ async function performSearch() {
         let url;
         let params = new URLSearchParams({ q: query });
 
-        // Text search endpoint
+        // Normal text search
         if (searchType === 'text') {
-            // Optional location boost
             if (lat && lon) {
                 params.append('lat', lat);
                 params.append('lon', lon);
             }
-
-            // Optional georef boost/filter
             if (georef) {
                 params.append('georef', georef);
             }
-
             url = `${API_BASE_URL}/search?${params}`;
-        } else {
-            // Spatiotemporal search endpoint
+        }
+        // Spatiotemporal search
+        else {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
 
-            // Required fields for spatiotemporal mode
+            // Required fields check
             if (!startDate || !endDate || !georef) {
-                alert(
-                    'For spatiotemporal search, please provide:\n' +
-                    '- Start Date\n- End Date\n- Georeference/Place Name'
-                );
+                alert('For spatiotemporal search, please provide required fields');
                 hideLoading();
                 return;
             }
 
-            // Use default location if user did not provide one
+            // Default location if none provided
             const searchLat = lat || '32.2211';
             const searchLon = lon || '35.2544';
             const distance = document.getElementById('distanceInput').value || '500km';
 
-            // Add spatiotemporal parameters
             params.append('start', startDate);
             params.append('end', endDate);
             params.append('lat', searchLat);
@@ -238,14 +222,153 @@ async function performSearch() {
             url = `${API_BASE_URL}/spatiotemporal?${params}`;
         }
 
-        // Fetch results from backend
+        // Call backend search
         const response = await fetch(url);
         const data = await response.json();
 
-        // Update UI
-        displayResults(data);
-        updateMap(data);
-
+        displayResults(data);   // Show results list
+        updateMap(data);       // Update markers on map
         hideLoading();
     } catch (error) {
-        console.error('Search e
+        console.error('Search error:', error);
+        hideLoading();
+        alert('Search failed. Please make sure the backend is running.');
+    }
+}
+
+// Display search results cards
+function displayResults(data) {
+    const resultsContainer = document.getElementById('results');
+    const resultCount = document.getElementById('resultCount');
+
+    // No results case
+    if (!data.hits || data.hits.hits.length === 0) {
+        resultsContainer.innerHTML = '<div class="empty-state"><p>No results found</p></div>';
+        resultCount.textContent = '';
+        return;
+    }
+
+    const hits = data.hits.hits;
+    resultCount.textContent = `${hits.length} results found`;
+
+    // Build HTML for each result
+    resultsContainer.innerHTML = hits.map((hit, index) => {
+        const source = hit._source;
+        const score = hit._score.toFixed(2);
+
+        const date = source.date ? new Date(source.date).toLocaleDateString() : 'N/A';
+
+        const authors = source.authors && source.authors.length > 0
+            ? source.authors.map(a => `${a.first} ${a.last}`).join(', ')
+            : 'Unknown';
+
+        const location = source.geopoint
+            ? `${source.geopoint.lat.toFixed(4)}, ${source.geopoint.lon.toFixed(4)}`
+            : 'N/A';
+
+        const fullContent = source.content || 'No content available';
+        const truncatedContent = fullContent.length > 300 ? fullContent.substring(0, 300) + '...' : fullContent;
+        const needsReadMore = fullContent.length > 300;
+
+        const georeferences = source.georeferences && source.georeferences.length > 0
+            ? source.georeferences.map(g =>
+                `<span class="tag georeference">📍 ${g.name}</span>`
+              ).join('')
+            : '';
+
+        const temporalExpressions = source.temporalExpressions && source.temporalExpressions.length > 0
+            ? source.temporalExpressions.slice(0, 3).map(t =>
+                `<span class="tag temporal">📅 ${t.text}</span>`
+              ).join('')
+            : '';
+
+        return `
+            <div class="result-card">
+                <span class="result-score">Score: ${score}</span>
+                <h3>${source.title || 'Untitled Document'}</h3>
+                <div class="result-meta">
+                    <span>👤 ${authors}</span>
+                    <span>📅 ${date}</span>
+                    <span>📍 ${location}</span>
+                </div>
+                <div class="result-content" id="content-${index}">
+                    <span class="content-preview">${truncatedContent}</span>
+                    <span class="content-full" style="display: none;">${fullContent}</span>
+                </div>
+                ${needsReadMore ? `<button class="read-more-btn" onclick="toggleReadMore(${index})">Read More</button>` : ''}
+                <div class="result-tags">
+                    ${georeferences}
+                    ${temporalExpressions}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle full content visibility
+function toggleReadMore(index) {
+    const contentDiv = document.getElementById(`content-${index}`);
+    const preview = contentDiv.querySelector('.content-preview');
+    const full = contentDiv.querySelector('.content-full');
+    const button = contentDiv.parentElement.querySelector('.read-more-btn');
+
+    if (full.style.display === 'none') {
+        preview.style.display = 'none';
+        full.style.display = 'inline';
+        button.textContent = 'Read Less';
+    } else {
+        preview.style.display = 'inline';
+        full.style.display = 'none';
+        button.textContent = 'Read More';
+    }
+}
+
+// Update map markers based on results
+function updateMap(data) {
+    // Remove old markers
+    markers.forEach(marker => map.removeLayer(marker));
+    markers = [];
+
+    if (!data.hits || data.hits.hits.length === 0) return;
+
+    const bounds = [];
+
+    data.hits.hits.forEach((hit) => {
+        const source = hit._source;
+
+        // Add marker only if geopoint exists
+        if (source.geopoint && source.geopoint.lat && source.geopoint.lon) {
+            const lat = source.geopoint.lat;
+            const lon = source.geopoint.lon;
+
+            const marker = L.marker([lat, lon]).addTo(map);
+
+            const popupContent = `
+                <div class="popup-title">${source.title || 'Untitled'}</div>
+                <div class="popup-info">
+                    📅 ${source.date ? new Date(source.date).toLocaleDateString() : 'N/A'}<br>
+                    📊 Score: ${hit._score.toFixed(2)}
+                </div>
+            `;
+
+            marker.bindPopup(popupContent);
+            markers.push(marker);
+            bounds.push([lat, lon]);
+        }
+    });
+
+    // Zoom map to fit all markers
+    if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+    }
+}
+
+// Show loading spinner
+function showLoading() {
+    document.getElementById('loadingSpinner').style.display = 'block';
+}
+
+// Hide loading spinner
+function hideLoading() {
+    document.getElementById('loadingSpinner').style.display = 'none';
+}
