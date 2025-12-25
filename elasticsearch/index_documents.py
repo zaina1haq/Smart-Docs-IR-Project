@@ -2,20 +2,25 @@ from elasticsearch import Elasticsearch, helpers
 from sentence_transformers import SentenceTransformer
 import json
 import os
-from tqdm import tqdm   # ✅ NEW
+from tqdm import tqdm
+
 
 es = Elasticsearch("http://localhost:9200")
+
+
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 INDEX_NAME = "smart-docs-ir"
 DATA_DIR = "../jsonl_output_with_countrykeys"
 
+
 def embed(text):
+    # Convert text into a vector embedding
     return model.encode(text, normalize_embeddings=True).tolist()
 
 
-# ✅ NEW: count valid documents first (for progress bar)
 def count_valid_docs():
+    # Count documents that have id and non-empty content
     total = 0
     for file in os.listdir(DATA_DIR):
         if not file.endswith(".jsonl"):
@@ -33,7 +38,8 @@ def count_valid_docs():
     return total
 
 
-def generate_actions(pbar):   # ✅ pbar added
+def generate_actions(pbar):
+    # Generate Elasticsearch bulk actions
     for file in os.listdir(DATA_DIR):
         if not file.endswith(".jsonl"):
             continue
@@ -49,6 +55,7 @@ def generate_actions(pbar):   # ✅ pbar added
                 if not content:
                     continue
 
+                # Add embedding to document
                 doc["content_embedding"] = embed(content)
 
                 yield {
@@ -57,18 +64,19 @@ def generate_actions(pbar):   # ✅ pbar added
                     "_source": doc
                 }
 
-                pbar.update(1)   # ✅ UPDATE progress
+                pbar.update(1)
 
 
 if __name__ == "__main__":
-    print("🔢 Counting documents...")
+    print("Counting documents...")
     total_docs = count_valid_docs()
-    print(f"📄 Total documents to index: {total_docs}")
+    print(f"Total documents to index: {total_docs}")
+
 
     with tqdm(total=total_docs, desc="Indexing", unit="doc") as pbar:
         success, failed = helpers.bulk(
             es,
-            generate_actions(pbar),   # ✅ pass progress bar
+            generate_actions(pbar),
             stats_only=True
         )
 
