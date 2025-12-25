@@ -1,31 +1,31 @@
-// API Configuration
-//(Flask API)
+// API base URL for backend requests
 const API_BASE_URL = 'http://localhost:8000';
 
-//Map state Leaflet map instance
+// Leaflet map object
 let map;
 
-// Keep track of markers so we can clear on new searches
+// Store all map markers so we can remove them later
 let markers = [];
-//after full load
+
+// Wait until HTML page is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
-    initializeMap();
-    setupEventListeners();
+    initializeMap();          // Create the map
+    setupEventListeners();    // Attach UI events
 });
 
+// Create and setup the Leaflet map
 function initializeMap() {
-    // Default view centered on Palestine area for map
+    // Set default map location (Palestine) and zoom level
     map = L.map('map').setView([32.2211, 35.2544], 8);
 
-    // OpenStreetMap tiles
+    // Load OpenStreetMap tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 19
     }).addTo(map);
 }
 
-// Event listeners setup
-
+// Setup all UI event listeners
 function setupEventListeners() {
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -35,25 +35,25 @@ function setupEventListeners() {
     const temporalFilters = document.getElementById('temporalFilters');
     const useMyLocation = document.getElementById('useMyLocation');
 
-    // Manual search trigger
+    // Click search button
     searchBtn.addEventListener('click', performSearch);
 
-    // Allow pressing Enter to search
+    // Press Enter to search
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') performSearch();
     });
 
-    // Autocomplete (debounced to reduce API calls)
+    // Run autocomplete after typing (with delay)
     searchInput.addEventListener('input', debounce(handleAutocomplete, 300));
 
-    // Hide autocomplete when clicking outside search box
+    // Hide autocomplete when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.search-box')) {
             hideAutocomplete();
         }
     });
 
-    // Toggle advanced filters UI
+    // Show or hide advanced filters
     toggleFilters.addEventListener('click', () => {
         const isHidden = advancedFilters.style.display === 'none';
         advancedFilters.style.display = isHidden ? 'block' : 'none';
@@ -62,18 +62,14 @@ function setupEventListeners() {
 
     // Show temporal filters only for spatiotemporal search
     searchType.addEventListener('change', (e) => {
-        temporalFilters.style.display =
-            e.target.value === 'spatiotemporal' ? 'block' : 'none';
+        temporalFilters.style.display = e.target.value === 'spatiotemporal' ? 'block' : 'none';
     });
 
-    // Auto-fill lat/lon using browser geolocation use my location
+    // Use browser location
     useMyLocation.addEventListener('click', getUserLocation);
 }
 
-// Utility: debounce after user stops the action
-
-
-// Prevents firing a function too often //used for autocomplete//
+// Delay function execution (used for autocomplete)
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -86,24 +82,22 @@ function debounce(func, wait) {
     };
 }
 
-// Autocomplete logic
-
+// Handle autocomplete API request
 async function handleAutocomplete(e) {
     const query = e.target.value.trim();
 
-    // Backend autocomplete requires at least 3 chars
+    // Do not search if less than 3 characters
     if (query.length < 3) {
         hideAutocomplete();
         return;
     }
 
     try {
-        const response = await fetch(
-            `${API_BASE_URL}/autocomplete?q=${encodeURIComponent(query)}`
-        );
+        // Call backend autocomplete endpoint
+        const response = await fetch(`${API_BASE_URL}/autocomplete?q=${encodeURIComponent(query)}`);
         const data = await response.json();
 
-        // Elasticsearch-style response
+        // Show results if any exist
         if (data.hits && data.hits.hits.length > 0) {
             showAutocomplete(data.hits.hits);
         } else {
@@ -115,149 +109,109 @@ async function handleAutocomplete(e) {
     }
 }
 
-// show autocomplete suggestions
+// Display autocomplete suggestions
 function showAutocomplete(hits) {
     const autocompleteList = document.getElementById('autocompleteList');
     autocompleteList.innerHTML = '';
-//takes those results and builds the dropdown list
+
+    // Create clickable suggestion for each hit
     hits.forEach(hit => {
         const item = document.createElement('div');
         item.className = 'autocomplete-item';
         item.textContent = hit._source.title;
-
-        // Clicking suggestion fills input and searches
         item.addEventListener('click', () => {
             document.getElementById('searchInput').value = hit._source.title;
             hideAutocomplete();
             performSearch();
         });
-
         autocompleteList.appendChild(item);
     });
 
     autocompleteList.classList.add('show');
 }
 
+// Hide autocomplete dropdown
 function hideAutocomplete() {
-    document.getElementById('autocompleteList').classList.remove('show');
+    const autocompleteList = document.getElementById('autocompleteList');
+    autocompleteList.classList.remove('show');
 }
 
-// Geolocation
+// Get user current location from browser
 function getUserLocation() {
-    // If the browser does not support location feature, stop here
-    if (!navigator.geolocation) {
+    if (navigator.geolocation) {
+        showLoading();
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                // Fill latitude and longitude inputs
+                document.getElementById('latInput').value = position.coords.latitude.toFixed(4);
+                document.getElementById('lonInput').value = position.coords.longitude.toFixed(4);
+
+                // Move map to user location
+                map.setView([position.coords.latitude, position.coords.longitude], 10);
+                hideLoading();
+                alert('Location set successfully!');
+            },
+            (error) => {
+                hideLoading();
+                alert('Unable to get your location. Please enter manually.');
+                console.error('Geolocation error:', error);
+            }
+        );
+    } else {
         alert('Geolocation is not supported by your browser.');
-        return;
     }
-
-    // Show loading spinner while we are waiting for the location
-    showLoading();
-
-    // Ask the browser for the current location
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            // Put the user's latitude and longitude into the input fields
-            document.getElementById('latInput').value =
-                position.coords.latitude.toFixed(4);
-            document.getElementById('lonInput').value =
-                position.coords.longitude.toFixed(4);
-
-            // Move the map to the user's location and zoom in a bit
-            map.setView(
-                [position.coords.latitude, position.coords.longitude],
-                10
-            );
-
-            // Hide loading spinner and show success message
-            hideLoading();
-            alert('Location set successfully!');
-        },
-        (error) => {
-            // If location fails, hide spinner and tell user to enter manually
-            hideLoading();
-            alert('Unable to get your location. Please enter manually.');
-            console.error('Geolocation error:', error);
-        }
-    );
 }
 
-
-// Main search logic
-
+// Main search function
 async function performSearch() {
-    // Read the search query text from the input
     const query = document.getElementById('searchInput').value.trim();
 
-    // Query is required (we do not send request if it is empty)
+    // Query is required
     if (!query) {
         alert('Please enter a search query');
         return;
     }
 
-    // Read selected search type (text or spatiotemporal)
     const searchType = document.getElementById('searchType').value;
-
-    // Read optional filters from inputs
     const lat = document.getElementById('latInput').value;
     const lon = document.getElementById('lonInput').value;
     const georef = document.getElementById('georefInput').value.trim();
 
-    // Show spinner and close autocomplete list
     showLoading();
     hideAutocomplete();
 
     try {
         let url;
-
-        // Build query parameters starting with the required q
         let params = new URLSearchParams({ q: query });
 
-        // =========================
-        // 1) TEXT SEARCH (/search)
-        // =========================
+        // Normal text search
         if (searchType === 'text') {
-            // If user provided lat/lon, send them to backend for location boosting
             if (lat && lon) {
                 params.append('lat', lat);
                 params.append('lon', lon);
             }
-
-            // If user provided a place name filter/boost, send it too
             if (georef) {
                 params.append('georef', georef);
             }
-
-            // Build final URL for backend
             url = `${API_BASE_URL}/search?${params}`;
         }
-
-        // ======================================
-        // 2) SPATIOTEMPORAL SEARCH (/spatiotemporal)
-        // ======================================
+        // Spatiotemporal search
         else {
-            // Read required date range fields
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
 
-            // For spatiotemporal search, we require start, end, and place name
+            // Required fields check
             if (!startDate || !endDate || !georef) {
-                alert(
-                    'For spatiotemporal search, please provide:\n' +
-                    '- Start Date\n- End Date\n- Place name'
-                );
+                alert('For spatiotemporal search, please provide required fields');
                 hideLoading();
                 return;
             }
 
-            // If user did not enter lat/lon, use default center point
+            // Default location if none provided
             const searchLat = lat || '32.2211';
             const searchLon = lon || '35.2544';
+            const distance = document.getElementById('distanceInput').value || '500km';
 
-            // Distance has a default value if empty
-            const distance =
-                document.getElementById('distanceInput').value || '500km';
-
-            // Add spatiotemporal parameters to the request
             params.append('start', startDate);
             params.append('end', endDate);
             params.append('lat', searchLat);
@@ -265,120 +219,83 @@ async function performSearch() {
             params.append('distance', distance);
             params.append('georef', georef);
 
-            // Build final URL for backend
             url = `${API_BASE_URL}/spatiotemporal?${params}`;
         }
 
-        // Call backend and parse JSON response
+        // Call backend search
         const response = await fetch(url);
         const data = await response.json();
 
-        // Update UI with results and map markers
-        displayResults(data);
-        updateMap(data);
-
-        // Done loading
+        displayResults(data);   // Show results list
+        updateMap(data);       // Update markers on map
         hideLoading();
     } catch (error) {
-        // If request fails, hide spinner and show error message
         console.error('Search error:', error);
         hideLoading();
         alert('Search failed. Please make sure the backend is running.');
     }
 }
 
-// Results rendering
+// Display search results cards
 function displayResults(data) {
-    // Where we will show the result cards
     const resultsContainer = document.getElementById('results');
-
-    // Small text that shows how many results we got
     const resultCount = document.getElementById('resultCount');
 
-    // If backend returned no hits, show "No results"
+    // No results case
     if (!data.hits || data.hits.hits.length === 0) {
-        resultsContainer.innerHTML =
-            '<div class="empty-state"><p>No results found</p></div>';
+        resultsContainer.innerHTML = '<div class="empty-state"><p>No results found</p></div>';
         resultCount.textContent = '';
         return;
     }
 
-    // Elasticsearch-style results array
     const hits = data.hits.hits;
-
-    // Show number of results on the page
     resultCount.textContent = `${hits.length} results found`;
 
-    // Convert each hit into a result card HTML
+    // Build HTML for each result
     resultsContainer.innerHTML = hits.map((hit, index) => {
-        const source = hit._source;           // document fields (title, content, date, ...)
-        const score = hit._score.toFixed(2);  // ranking score from ES
+        const source = hit._source;
+        const score = hit._score.toFixed(2);
 
-        // Format document date (if missing, show N/A)
-        const date = source.date
-            ? new Date(source.date).toLocaleDateString()
-            : 'N/A';
+        const date = source.date ? new Date(source.date).toLocaleDateString() : 'N/A';
 
-        // Combine authors into one string (if missing, show Unknown)
-        const authors =
-            source.authors && source.authors.length > 0
-                ? source.authors.map(a => `${a.first} ${a.last}`).join(', ')
-                : 'Unknown';
+        const authors = source.authors && source.authors.length > 0
+            ? source.authors.map(a => `${a.first} ${a.last}`).join(', ')
+            : 'Unknown';
 
-        // Show geopoint if exists (lat/lon), otherwise N/A
         const location = source.geopoint
             ? `${source.geopoint.lat.toFixed(4)}, ${source.geopoint.lon.toFixed(4)}`
             : 'N/A';
 
-        // Show only first 300 chars, and allow "Read More" if content is long
         const fullContent = source.content || 'No content available';
-        const truncatedContent =
-            fullContent.length > 300
-                ? fullContent.substring(0, 300) + '...'
-                : fullContent;
+        const truncatedContent = fullContent.length > 300 ? fullContent.substring(0, 300) + '...' : fullContent;
         const needsReadMore = fullContent.length > 300;
 
-        // Build georeference tags if they exist
-        const georeferences =
-            source.georeferences && source.georeferences.length > 0
-                ? source.georeferences
-                      .map(g => `<span class="tag georeference">📍 ${g.name}</span>`)
-                      .join('')
-                : '';
+        const georeferences = source.georeferences && source.georeferences.length > 0
+            ? source.georeferences.map(g =>
+                `<span class="tag georeference">📍 ${g.name}</span>`
+              ).join('')
+            : '';
 
-        // Build temporal tags  if they exist (show max 3)
-        const temporalExpressions =
-            source.temporalExpressions && source.temporalExpressions.length > 0
-                ? source.temporalExpressions
-                      .slice(0, 3)
-                      .map(t => `<span class="tag temporal">📅 ${t.text}</span>`)
-                      .join('')
-                : '';
+        const temporalExpressions = source.temporalExpressions && source.temporalExpressions.length > 0
+            ? source.temporalExpressions.slice(0, 3).map(t =>
+                `<span class="tag temporal">📅 ${t.text}</span>`
+              ).join('')
+            : '';
 
-        // Return one result card HTML
         return `
             <div class="result-card">
                 <span class="result-score">Score: ${score}</span>
                 <h3>${source.title || 'Untitled Document'}</h3>
-
                 <div class="result-meta">
                     <span>👤 ${authors}</span>
                     <span>📅 ${date}</span>
                     <span>📍 ${location}</span>
                 </div>
-
                 <div class="result-content" id="content-${index}">
                     <span class="content-preview">${truncatedContent}</span>
-                    <span class="content-full" style="display: none;">
-                        ${fullContent}
-                    </span>
+                    <span class="content-full" style="display: none;">${fullContent}</span>
                 </div>
-
-                ${needsReadMore
-                    ? `<button class="read-more-btn"
-                        onclick="toggleReadMore(${index})">Read More</button>`
-                    : ''}
-
+                ${needsReadMore ? `<button class="read-more-btn" onclick="toggleReadMore(${index})">Read More</button>` : ''}
                 <div class="result-tags">
                     ${georeferences}
                     ${temporalExpressions}
@@ -387,92 +304,71 @@ function displayResults(data) {
         `;
     }).join('');
 }
-// Toggle content expansion (Read More / Read Less)
+
+// Toggle full content visibility
 function toggleReadMore(index) {
-    // Get the content container for this result card
     const contentDiv = document.getElementById(`content-${index}`);
-
-    // Short preview text (first 300 chars)
     const preview = contentDiv.querySelector('.content-preview');
-
-    // Full content text (hidden by default)
     const full = contentDiv.querySelector('.content-full');
+    const button = contentDiv.parentElement.querySelector('.read-more-btn');
 
-    // The button under the card (Read More / Read Less)
-    const button =
-        contentDiv.parentElement.querySelector('.read-more-btn');
-
-    // If full content is hidden, show it
     if (full.style.display === 'none') {
         preview.style.display = 'none';
         full.style.display = 'inline';
         button.textContent = 'Read Less';
-    }
-    // Otherwise, go back to preview
-    else {
+    } else {
         preview.style.display = 'inline';
         full.style.display = 'none';
         button.textContent = 'Read More';
     }
 }
 
-// ==============================
-// Map update
-// ==============================
-
+// Update map markers based on results
 function updateMap(data) {
-    // Remove old markers from the map (so new search does not mix with old search)
+    // Remove old markers
     markers.forEach(marker => map.removeLayer(marker));
     markers = [];
 
-    // If there are no results, do nothing
     if (!data.hits || data.hits.hits.length === 0) return;
 
-    // Collect marker positions so we can zoom to them later
     const bounds = [];
 
-    data.hits.hits.forEach(hit => {
+    data.hits.hits.forEach((hit) => {
         const source = hit._source;
 
-        // Add marker only if the document has a valid geopoint (lat/lon)
+        // Add marker only if geopoint exists
         if (source.geopoint && source.geopoint.lat && source.geopoint.lon) {
             const lat = source.geopoint.lat;
             const lon = source.geopoint.lon;
 
-            // Create marker and add it to the map
             const marker = L.marker([lat, lon]).addTo(map);
 
-            // Popup shows basic document info when user clicks marker
-            marker.bindPopup(`
+            const popupContent = `
                 <div class="popup-title">${source.title || 'Untitled'}</div>
                 <div class="popup-info">
-                    📅 ${source.date
-                        ? new Date(source.date).toLocaleDateString()
-                        : 'N/A'}<br>
+                    📅 ${source.date ? new Date(source.date).toLocaleDateString() : 'N/A'}<br>
                     📊 Score: ${hit._score.toFixed(2)}
                 </div>
-            `);
+            `;
 
-            // Save marker so we can remove it on the next search
+            marker.bindPopup(popupContent);
             markers.push(marker);
-
-            // Save marker position for map zoom fitting
             bounds.push([lat, lon]);
         }
     });
 
-    // If we added at least one marker,allow zoom map to show all of them
+    // Zoom map to fit all markers
     if (bounds.length > 0) {
         map.fitBounds(bounds, { padding: [50, 50] });
     }
 }
 
+// Show loading spinner
 function showLoading() {
-    // Show spinner while waiting for backend response
     document.getElementById('loadingSpinner').style.display = 'block';
 }
 
+// Hide loading spinner
 function hideLoading() {
-    // Hide spinner after results are ready
     document.getElementById('loadingSpinner').style.display = 'none';
 }
