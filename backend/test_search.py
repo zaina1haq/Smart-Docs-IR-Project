@@ -3,29 +3,32 @@ import json
 
 API_BASE = "http://localhost:8000"
 
-# Test 1: Check if backend is running
+#check if backend is running
 try:
     response = requests.get(f"{API_BASE}/")
-    print("✅ Backend is running")
+    print("Backend is running")
     print(response.json())
 except Exception as e:
-    print(f"❌ Backend error: {e}")
+    print(f"Backend error: {e}")
     exit()
 
-# Test 2: Simple text search
-print("\n" + "="*50)
+#simple text search
+print("\n" + "=" * 50)
 print("Testing TEXT SEARCH...")
 try:
     response = requests.get(f"{API_BASE}/search?q=cocoa")
     data = response.json()
-    print(f"✅ Found {len(data.get('hits', {}).get('hits', []))} results")
-    if data.get('hits', {}).get('hits'):
-        print(f"   First result: {data['hits']['hits'][0]['_source']['title']}")
-except Exception as e:
-    print(f"❌ Text search error: {e}")
 
-# Test 3: Spatiotemporal search
-print("\n" + "="*50)
+    hits = data.get("hits", {}).get("hits", [])
+    print(f"Found {len(hits)} results")
+
+    if hits:
+        print(f"First result title: {hits[0]['_source']['title']}")
+except Exception as e:
+    print(f"Text search error: {e}")
+
+# spatiotemporal search
+print("\n" + "=" * 50)
 print("Testing SPATIOTEMPORAL SEARCH...")
 try:
     params = {
@@ -37,14 +40,18 @@ try:
         "distance": "1000km",
         "georef": "Bahia"
     }
+
     response = requests.get(f"{API_BASE}/spatiotemporal", params=params)
     data = response.json()
-    print(f"✅ Found {len(data.get('hits', {}).get('hits', []))} results")
-    if data.get('hits', {}).get('hits'):
-        for hit in data['hits']['hits'][:3]:
-            print(f"   - {hit['_source']['title']} (score: {hit['_score']})")
+
+    hits = data.get("hits", {}).get("hits", [])
+    print(f"Found {len(hits)} results")
+
+    if hits:
+        for hit in hits[:3]:
+            print(f"- {hit['_source']['title']} (score: {hit['_score']})")
     else:
-        print("   ⚠️ No results - checking query...")
-        print(f"   Response: {json.dumps(data, indent=2)}")
+        print("No results returned")
+        print(json.dumps(data, indent=2))
 except Exception as e:
-    print(f"❌ Spatiotemporal search error: {e}")
+    print(f"Spatiotemporal search error: {e}")

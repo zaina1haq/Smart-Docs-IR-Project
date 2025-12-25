@@ -2,9 +2,7 @@ from es_client import es, INDEX
 from typing import Optional, List
 
 
-# --------------------------------------------------
-# 1. AUTOCOMPLETE (titles)  ✅ (بدون تعديل)
-# --------------------------------------------------
+# 1. AUTOCOMPLETE (titles)
 def autocomplete_title(prefix: str):
     return es.search(
         index=INDEX,
@@ -34,9 +32,8 @@ def autocomplete_title(prefix: str):
     )
 
 
-# --------------------------------------------------
+
 # 2. TEXT + SEMANTIC + RECENCY + OPTIONAL LOCATION
-# --------------------------------------------------
 def text_search(
     query: str,
     embedding: Optional[List[float]] = None,
@@ -46,9 +43,7 @@ def text_search(
 ):
     functions = []
 
-    # --------------------------------------------------
     # Recency boost
-    # --------------------------------------------------
     functions.append({
         "gauss": {
             "date": {
@@ -59,9 +54,7 @@ def text_search(
         }
     })
 
-    # --------------------------------------------------
-    # Localization boost (optional)
-    # --------------------------------------------------
+    # Localization boost
     if lat is not None and lon is not None:
         functions.append({
             "gauss": {
@@ -73,9 +66,7 @@ def text_search(
             }
         })
 
-    # --------------------------------------------------
     # Stage 1: Lexical retrieval (BM25)
-    # --------------------------------------------------
     lexical_query = {
         "bool": {
             "should": [
@@ -95,7 +86,7 @@ def text_search(
                     }
                 },
                 {
-                    # ✅ Exact title match (dominant signal)
+                    # Exact title match
                     "term": {
                         "title.raw": {
                             "value": query,
@@ -109,14 +100,12 @@ def text_search(
         }
     }
 
-    # --------------------------------------------------
-    # Georeference boost (unchanged)
-    # --------------------------------------------------
+    # Georeference boost
     if georef is not None:
         lexical_query["bool"]["should"].append({
         "nested": {
             "path": "georeferences",
-            "score_mode": "max",  # خُد أقوى georeference داخل الوثيقة
+            "score_mode": "max",  #take strongest one
             "query": {
                 "function_score": {
                     "query": {
@@ -140,11 +129,8 @@ def text_search(
         }
     })
 
-
-    # --------------------------------------------------
     # Stage 2: Semantic re-ranking
-    # ✅ FIXED: semantic يعزّز السكور ولا يستبدله
-    # --------------------------------------------------
+
     if embedding is not None:
         final_query = {
             "script_score": {
@@ -175,11 +161,8 @@ def text_search(
         }
     else:
         final_query = lexical_query
-
-    # --------------------------------------------------
     # Final scoring
-    # ✅ FIXED: multiply بدل sum
-    # --------------------------------------------------
+
     return es.search(
         index=INDEX,
         size=10,
@@ -187,16 +170,14 @@ def text_search(
             "function_score": {
                 "query": final_query,
                 "functions": functions,
-                "boost_mode": "multiply",  # ✅ FIXED
+                "boost_mode": "multiply",
                 "score_mode": "sum"
             }
         }
     )
 
+# 3. SPATIOTEMPORAL SEARCH
 
-# --------------------------------------------------
-# 3. SPATIOTEMPORAL SEARCH (بدون تعديل)
-# --------------------------------------------------
 def spatiotemporal_search(
     query: str,
     start: str,

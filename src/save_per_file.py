@@ -7,10 +7,12 @@ from preprocess import preprocess_doc
 
 
 DATA_RAW_DIR = "../data_raw"
+
 DATA_PROCESSED_DIR = "../data_processed"
 
 
 def save_per_sgm_file(data_raw_dir: str, data_processed_dir: str) -> None:
+    """Read all .sgm files, preprocess their documents, and save per file as JSON."""
     os.makedirs(data_processed_dir, exist_ok=True)
 
     sgm_files = sorted(
@@ -22,12 +24,13 @@ def save_per_sgm_file(data_raw_dir: str, data_processed_dir: str) -> None:
 
     for sgm_file in sgm_files:
         sgm_path = os.path.join(data_raw_dir, sgm_file)
+
         out_name = os.path.splitext(sgm_file)[0] + ".json"
         out_path = os.path.join(data_processed_dir, out_name)
 
         raw_docs = parse_reuters_file(sgm_path)
-        processed_docs = []
 
+        processed_docs = []
         for doc in tqdm(
             raw_docs,
             desc=f"Processing {sgm_file}",

@@ -6,25 +6,27 @@ from typing import Optional, Set, Any, Dict, List
 import pycountry
 
 
-# Make paths stable no matter where you run from
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PROCESSED_DIR = os.path.join(BASE_DIR, "..", "data_processed")
 OUT_DIR = os.path.join(BASE_DIR, "..", "data_processed_with_countrykeys")
 
 
 def _norm_name(s: str) -> str:
-    """Normalize for matching country names (keep letters/spaces, collapse spaces, lowercase)."""
+    # Normalize text for country name matching
     s = s or ""
     s = re.sub(r"[^A-Za-z\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip().lower()
     return s
 
 
-# Build a lookup dict of exact country names from pycountry (no manual synonym table)
-# Includes name + official_name + common_name when available.
 _NAME_TO_ALPHA2: Dict[str, str] = {}
 for c in pycountry.countries:
-    variants = [getattr(c, "name", None), getattr(c, "official_name", None), getattr(c, "common_name", None)]
+    variants = [
+        getattr(c, "name", None),
+        getattr(c, "official_name", None),
+        getattr(c, "common_name", None),
+    ]
     for v in variants:
         if isinstance(v, str) and v.strip():
             key = _norm_name(v)
@@ -32,13 +34,6 @@ for c in pycountry.countries:
 
 
 def canonical_country_key(text: str) -> Optional[str]:
-    """
-    Reliable mapping:
-    - Handles codes: US / USA / UAE / U.S. / U.S.A. -> us, ae, etc.
-    - Handles exact country names from pycountry: Uruguay -> uy
-    - Handles multi-word country names: United States of America -> us, El Salvador -> sv
-    - Avoids fuzzy mistakes like "Salvador" -> El Salvador
-    """
     if not text or not isinstance(text, str):
         return None
 
@@ -46,13 +41,14 @@ def canonical_country_key(text: str) -> Optional[str]:
     if not s:
         return None
 
-    collapsed = re.sub(r"[^A-Za-z]", "", s).upper()  # "U.S.A." -> "USA"
+    # Collapse punctuation (U.S.A. -> USA)
+    collapsed = re.sub(r"[^A-Za-z]", "", s).upper()
 
-    # Common alias: UK -> GB
+    # Special case
     if collapsed == "UK":
         return "gb"
 
-    # Codes
+    # Handle country codes (alpha-2 or alpha-3)
     if 2 <= len(collapsed) <= 3:
         if len(collapsed) == 2:
             c = pycountry.countries.get(alpha_2=collapsed)
@@ -61,23 +57,21 @@ def canonical_country_key(text: str) -> Optional[str]:
             c = pycountry.countries.get(alpha_3=collapsed)
             return c.alpha_2.lower() if c else None
 
-    # Exact name matching (NO fuzzy)
+    # Exact country name matching only
     key = _norm_name(s)
 
-    # If it's a single word, ONLY accept if it exactly matches a country name (e.g., "Uruguay").
-    # This prevents "Salvador" from being treated as "El Salvador".
+    # Single-word names must match exactly
     if " " not in key:
         return _NAME_TO_ALPHA2.get(key)
 
-    # Multi-word: allow exact match against known country names
     return _NAME_TO_ALPHA2.get(key)
 
 
 def enrich_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    # Add countryKeys and country_code fields to a document
     out = dict(doc)
     country_keys: Set[str] = set()
 
-    # From places tags
     places = out.get("places") or []
     if isinstance(places, list):
         for p in places:
@@ -86,7 +80,7 @@ def enrich_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
                 if cc:
                     country_keys.add(cc)
 
-    # From georeferences
+    # Extract country keys from georeferences
     georefs = out.get("georeferences") or []
     if isinstance(georefs, list):
         new_georefs: List[Dict[str, Any]] = []
@@ -101,7 +95,7 @@ def enrich_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
                 cc = canonical_country_key(name)
                 if cc:
                     country_keys.add(cc)
-                    # Optional: only set if missing
+                    # Add country_code only if not already present
                     gg.setdefault("country_code", cc)
 
             new_georefs.append(gg)
@@ -113,6 +107,7 @@ def enrich_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(start_idx: int = 0, end_idx: int = 21) -> None:
+
     os.makedirs(OUT_DIR, exist_ok=True)
 
     json_files = sorted(
@@ -124,10 +119,13 @@ def main(start_idx: int = 0, end_idx: int = 21) -> None:
         raise RuntimeError(f"No .json files found in {DATA_PROCESSED_DIR}")
 
     if start_idx < 0 or start_idx >= len(json_files):
-        raise ValueError(f"start_idx={start_idx} out of range (0..{len(json_files)-1})")
-    end_idx = min(end_idx, len(json_files) - 1)
+        raise ValueError(
+            f"start_idx={start_idx} out of range (0..{len(json_files)-1})"
+        )
 
+    end_idx = min(end_idx, len(json_files) - 1)
     target_files = json_files[start_idx:end_idx + 1]
+
     print(f"Found {len(json_files)} JSON files total")
     print(f"Processing indices [{start_idx}..{end_idx}] ({len(target_files)} files):")
     for f in target_files:
@@ -141,9 +139,14 @@ def main(start_idx: int = 0, end_idx: int = 21) -> None:
             docs = json.load(f)
 
         if not isinstance(docs, list):
-            raise ValueError(f"{filename} is not a list of documents (expected list)")
+            raise ValueError(
+                f"{filename} is not a list of documents (expected list)"
+            )
 
-        enriched = [enrich_doc(d) if isinstance(d, dict) else d for d in docs]
+        enriched = [
+            enrich_doc(d) if isinstance(d, dict) else d
+            for d in docs
+        ]
 
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(enriched, f, ensure_ascii=False, indent=2)

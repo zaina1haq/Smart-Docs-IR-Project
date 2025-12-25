@@ -5,8 +5,11 @@ from typing import Any, Dict, List, Optional
 
 _REUTERS_RE = re.compile(r"(?is)<REUTERS([^>]*)>(.*?)</REUTERS>")
 
+
 def _strip_tags(s: str) -> str:
+    # Remove all XML/HTML tags
     return re.sub(r"(?is)<[^>]+>", " ", s)
+
 
 def parse_reuters_file(path: str) -> List[Dict[str, Any]]:
     with open(path, encoding="latin-1") as f:
@@ -18,13 +21,16 @@ def parse_reuters_file(path: str) -> List[Dict[str, Any]]:
         attrs = m.group(1)
         inner = m.group(2)
 
+        # Extract document ID
         newid = re.search(r'NEWID="(\d+)"', attrs, re.I)
         doc_id = newid.group(1) if newid else None
 
+        # extract one tag value
         def tag(name: str) -> str:
             m2 = re.search(rf"(?is)<{name}[^>]*>(.*?)</{name}>", inner)
             return html.unescape(m2.group(1)).strip() if m2 else ""
 
+        # extract list tags like TOPICS or PLACES
         def tag_list(name: str) -> List[str]:
             m2 = re.search(rf"(?is)<{name}[^>]*>(.*?)</{name}>", inner)
             if not m2:
@@ -35,6 +41,7 @@ def parse_reuters_file(path: str) -> List[Dict[str, Any]]:
                 if html.unescape(x).strip()
             ]
 
+        #  ublication date known Reuters formats
         raw_date = tag("DATE")
         date_published: Optional[datetime] = None
         if raw_date:
